@@ -3,13 +3,31 @@ from pydantic import BaseModel
 from openai import OpenAI
 import os
 
+from sqlalchemy import create_engine, Column, Integer, String, Text
+from sqlalchemy.orm import sessionmaker, declarative_base
+
 app = FastAPI()
 
-# Initialize OpenAI client
+# OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Memory storage (simple in-memory)
-chat_memory = {}
+# Database setup (SQLite)
+DATABASE_URL = "sqlite:///./chat.db"
+
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine)
+Base = declarative_base()
+
+# Table
+class Chat(Base):
+    __tablename__ = "chats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String)
+    message = Column(Text)
+    reply = Column(Text)
+
+Base.metadata.create_all(bind=engine)
 
 # Request model
 class ChatRequest(BaseModel):
@@ -21,37 +39,33 @@ class ChatRequest(BaseModel):
 def home():
     return {"status": "ok"}
 
-# Chat endpoint
+# Chat API
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
-        user_id = req.user_id
+        db = SessionLocal()
+
+        user_id = req.user_id   # comes from n8n sessionId
         user_msg = req.message
 
-        # Initialize memory for user
-        if user_id not in chat_memory:
-            chat_memory[user_id] = []
-
-        # Add user message
-        chat_memory[user_id].append({
-            "role": "user",
-            "content": user_msg
-        })
-
-        # Call OpenAI
-        response = client.chat.completions.create(
+        # OpenAI call (simple, no backend memory)
+        response = client.responses.create(
             model="gpt-4o-mini",
-            messages=chat_memory[user_id]
+            input=user_msg
         )
 
-        # Extract reply
-        reply = response.choices[0].message.content
+        reply = response.output[0].content[0].text
 
-        # Store assistant reply
-        chat_memory[user_id].append({
-            "role": "assistant",
-            "content": reply
-        })
+        # Save to DB
+        chat = Chat(
+            user_id=user_id,
+            message=user_msg,
+            reply=reply
+        )
+
+        db.add(chat)
+        db.commit()
+        db.close()
 
         return {"reply": reply}
 
