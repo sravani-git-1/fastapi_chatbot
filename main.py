@@ -5,7 +5,7 @@ import os
 
 app = FastAPI()
 
-client = OpenAI(api_key=os.getenv("AIzaSyCG6i1TGM3nlaCr8ID-pjPmQ8cUeRq9HvE"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 chat_memory = {}
 
